@@ -1,171 +1,72 @@
-# RasPiArduino [![Build Status](https://travis-ci.org/me-no-dev/RasPiArduino.svg?branch=master)](https://travis-ci.org/me-no-dev/RasPiArduino)
+> [!WARNING]  
+> I am still working on this, and it doesn't work at all, yet
 
-[![Join the chat at https://gitter.im/me-no-dev/RasPiArduino](https://badges.gitter.im/me-no-dev/RasPiArduino.svg)](https://gitter.im/me-no-dev/RasPiArduino?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)
+This is a fork of [RasPiArduino](https://github.com/konsumer/RasPiArduino). That project's purpose is to treat a pi exactly like an Arduino, using plain IDE, over the network. If you want to do that, use theirs.
 
-### Includes [raspberry_pi_revision from Andrew Duncan](https://github.com/AndrewFromMelbourne/raspberry_pi_revision)
+The idea here is that you can use Arduino API, outside of the IDE, to make code very similar to Arduino (and share device-driver libs) with C++ or C.
 
-## Arduino Framework for RaspberryPI
-### Features
-- The familiar Arduino API
-- pinMode/digitalRead/digitalWrite/analogWrite
-- Full SPI, Wire and Serial compatibility
-- Access to STDIN/STDOUT through the Console class
-- Access to system tty through the TTY library
-- Process, FileIO, Client, Server and UDP implementations through the Bridge library
+## motivation
 
-### Instructions for Arduino IDE
-* Open the installation folder of Arduino IDE
-* Create a folder named "RaspberryPi" inside "hardware" and clone the repository to a folder named "piduino"
-```bash
-mkdir hardware/RaspberryPi
-cd hardware/RaspberryPi
-git clone https://github.com/me-no-dev/RasPiArduino piduino
+I needed to make some native Pi stuff in C (puredata extensions that can mess with hardware.) There is [pigpio](https://abyz.me.uk/rpi/pigpio/) and [wiringPi](https://github.com/WiringPi/WiringPi), which are both great, but I wanted to reuse existing Arduino device-libs for a few things, so I didn't have to write them from scratch in those libs.
+
+## setup
+
+Here are some preperation-steps for your pi, that will increase overall performance:
+
 ```
-* Download , extract and copy the toolchain to piduino/tools/arm-linux-gnueabihf
-  - Windows: [gnutoolchains.com](http://gnutoolchains.com/raspberry/)
-    * The toolchain for Jessie will work ONLY on RaspberryPi 2
-    * The toolchain for Wheezy will work on ALL RaspberryPi boards (recommended)
-    * [Video Instructions](https://www.youtube.com/watch?v=lZvhtfUlY8Y)
-  - Linux 64: [arm-linux-gnueabihf](https://github.com/me-no-dev/RasPiArduino/releases/download/0.0.1/arm-linux-gnueabihf-linux64.tar.gz)
-  - Linux 32: [arm-linux-gnueabihf](https://github.com/me-no-dev/RasPiArduino/releases/download/0.0.1/arm-linux-gnueabihf-linux32.tar.gz)
-  - Mac OS X: [arm-linux-gnueabihf](https://github.com/me-no-dev/RasPiArduino/releases/download/0.0.1/arm-linux-gnueabihf-osx.tar.gz)
-* Restart Arduino IDE and select the RaspberryPI from the list of boards
-* Compile a sketch
-* Select the RaspberryPi from the list of Ports (will show the IP address)
-* Upload your sketch and see it go
+# get root
+sudo -s
 
-
-### Instructions for the PI
-* Install Raspbian Jessie on your RaspberryPI
-* Gain root permissions
-```bash
-sudo su
-```
-
-* Enable password login for root
-```bash
-passwd
-```
-  - _enter the new root password twice_
-  - Edit `/etc/ssh/sshd_config` and make sure that the following lines exist and are not commented
-```bash
-PermitRootLogin yes
-PasswordAuthentication yes
-```
-
-* Disable Serial Console on boot by removing `console=/dev/ttyAMA0` from /boot/cmdline.txt (or through raspi-config)
-
-* Disable Serial tty
-```bash
+# disable serial console
 systemctl disable serial-getty@ttyAMA0
+sed -i "s|console=/dev/ttyAMA0||" /boot/firmware/cmdline.txt
+
+# disable obnboard audio
+sed -i "s|dtparam=audio=on|#dtparam=audio=on|" /boot/firmware/config.txt  
 ```
 
-* Disable loading sound kernel module
-```
-sed -i "s/dtparam=audio=on/#dtparam=audio=on/" /boot/config.txt
-```
+On pizero & pi4, I also like to [enable gadget mode](https://www.hardill.me.uk/wordpress/2019/11/02/pi4-usb-c-gadget/), so I can SSH into it, without wifi.
 
-* Change the hostname for your Pi (optional) (also through raspi-config)
-```bash
-hostnamectl set-hostname piduino
-```
+## usage
 
-* Setup WiFi (optional)
-```bash
-cat > /etc/wpa_supplicant/wpa_supplicant.conf <<EOL
-ctrl_interface=DIR=/var/run/wpa_supplicant GROUP=netdev
-update_config=1
-network={
-    ssid="your-ssid"
-    psk="your-pass"
-}
-EOL
+If you are using cmake, you can include it in your project like this:
+
+```cmake
+include(FetchContent)
+set(FETCHCONTENT_QUIET 0)
+
+FetchContent_Declare(
+  RaspiArduino
+  GIT_REPOSITORY https://github.com/konsumer/RasPiArduino.git
+  GIT_TAG master
+  GIT_PROGRESS 1
+  GIT_SHALLOW 1
+)
+FetchContent_MakeAvailable(RaspiArduino)
 ```
 
-* Setup avahi service to allow updating the sketch from ArduinoIDE
-```bash
-cat > /etc/avahi/services/arduino.service <<EOL
-<?xml version="1.0" standalone='no'?><!--*-nxml-*-->
-<!DOCTYPE service-group SYSTEM "avahi-service.dtd">
-<service-group>
-  <name replace-wildcards="yes">%h</name>
-  <service>
-    <type>_arduino._tcp</type>
-    <port>22</port>
-    <txt-record>board=bplus</txt-record>
-  </service>
-</service-group>
-EOL
+It static-compiles, so your program will have no dependencies.
 
-service avahi-daemon restart
+Then use it with your targets, like this:
+
+```cmake
+add_executable(mycoolprogram src/main.c)
+target_link_libraries(mycoolprogram RaspiArduino)
 ```
 
-* Install telnet and git
-```bash
-apt-get update
-apt-get install telnet git
+## dev
+
+To test, do this:
+
+```
+cmake -B build
+cmake --build build
 ```
 
-* Copy all files from tools/arpi_bins to /usr/local/bin
-```bash
-git clone https://github.com/me-no-dev/RasPiArduino.git piduino
-chmod +x piduino/tools/arpi_bins/*
-cp piduino/tools/arpi_bins/* /usr/local/bin
-rm -rf piduino
-```
+## todo
 
-* Create symbolic link for _run-avrdude_
-```bash
-ln -s /usr/local/bin/run-avrdude /usr/bin/run-avrdude
-```
-
-* Synchronize time and start sketch on boot (optional)
-```bash
-apt-get install ntpdate
-cat > /etc/rc.local <<EOL
-#!/bin/sh -e
-
-_IP=\$(hostname -I) || true
-if [ "\$_IP" ]; then
-  printf "My IP address is %s\n" "\$_IP"
-fi
-
-# Sync Time
-ntpdate-debian -u > /dev/null
-# Start Sketch
-/usr/local/bin/run-sketch > /dev/null
-
-exit 0
-EOL
-```
-
-* Prevent some RealTek USB WiFi from sleep (optional) (EU)
-```bash
-echo "options 8192cu rtw_power_mgnt=0 rtw_enusbss=1 rtw_ips_mode=1" > /etc/modprobe.d/8192cu.conf
-echo "options r8188eu rtw_power_mgnt=0 rtw_enusbss=1 rtw_ips_mode=1" > /etc/modprobe.d/r8188eu.conf
-```
-
-* Disable screen blank (optional)
-```bash
-sed -i "s/BLANK_TIME=30/BLANK_TIME=0/" /etc/kbd/config
-sed -i "s/POWERDOWN_TIME=30/POWERDOWN_TIME=0/" /etc/kbd/config
-```
-
-* Do not load I2C UART or SPI kernel drivers
-
-* reboot
-
-
-### If everything went well
-#### Selecting the board from the list of ports
-![Select Pi Port](doc/pi_select.png)
-
-#### Password prompt before upload
-![Enter Pi Pass](doc/pi_pass.png)
-
-#### Monitoring the sketch
-![Sketch Monitor](doc/pi_monitor.png)
-
-
-### Links to external tutorials
-* [VIDEO: Setup Arduino IDE for Windows](https://www.youtube.com/watch?v=lZvhtfUlY8Y)
+- actually get it building
+- add standalone examples (using cmake) for everyting. [Here](examples/Wire/digital_potentiometer) is my first example.
+- add plain C wrapper to whole lib (for using in plain C)
+- lots of testing
+- hardware emulators that use SDL (for use on desktop)
