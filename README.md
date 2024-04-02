@@ -11,7 +11,7 @@ I needed to make some native Pi stuff in C (puredata extensions that can mess wi
 
 ## setup
 
-Here are some preperation-steps for your pi, that will increase overall performance:
+Start with Raspberry Pi OS Lite. Here are some preperation-steps for your pi, that will increase overall performance:
 
 ```
 # get root
