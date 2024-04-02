@@ -11,21 +11,16 @@ I needed to make some native Pi stuff in C (puredata extensions that can mess wi
 
 ## setup
 
-Start with Raspberry Pi OS Lite. Here are some preperation-steps for your pi, that will increase overall performance:
+Start with Raspberry Pi OS Lite. Here are some preperation-steps for your pi, that will increase overall performance.
 
-```
-# get root
-sudo -s
-
-# disable serial console
-systemctl disable serial-getty@ttyAMA0
-sed -i "s|console=/dev/ttyAMA0||" /boot/firmware/cmdline.txt
-
-# disable obnboard audio
-sed -i "s|dtparam=audio=on|#dtparam=audio=on|" /boot/firmware/config.txt  
-```
+- disable serial console
+- don't use wifi
+- don't enable any modules that use i2c/spi (like serial)
+- increase i2c speed to 1000000 baud
 
 On pizero & pi4, I also like to [enable gadget mode](https://www.hardill.me.uk/wordpress/2019/11/02/pi4-usb-c-gadget/), so I can SSH into it, without wifi.
+
+I included [headless](tools/headless) script, so you can create a pi image quickly, with gadget-mode & ssh setup.
 
 ## usage
 
