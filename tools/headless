@@ -1,0 +1,109 @@
+#!/bin/bash
+
+set -e
+
+if [ "$(uname -o)" != "GNU/Linux" ]; then
+  echo "You must run this script on Linux for extended mounting capabilities. Use an emulator."
+  exit 1
+fi
+
+if [ -f /.dockerenv ]; then
+  echo "You must run this script on real Linux (not docker) for extended mounting capabilities. Use an emulator."
+  exit 1
+fi
+
+if [ "$(whoami)" != root ]; then
+  echo "Please run as root (use sudo.)"
+  exit 1
+fi
+
+if ! command -v parted &> /dev/null; then
+  echo "parted is not installed. Add with apt install parted"
+  exit 1
+fi
+
+IMG_URL="https://downloads.raspberrypi.com/raspios_lite_arm64/images/raspios_lite_arm64-2023-12-11/2023-12-11-raspios-bookworm-arm64-lite.img.xz"
+
+if [ ! -f pipd-source.img ];then
+  if ! command -v unxz &> /dev/null; then
+    echo "unxz is not installed. Add with apt install xz-utils"
+    exit 1
+  fi
+
+  if ! command -v wget &> /dev/null; then
+    echo "wget is not installed. Add with apt install wget"
+    exit 1
+  fi
+
+  wget "${IMG_URL}" -O raspiarduino-source.img.xz
+  unxz raspiarduino-source.img.xz
+fi
+
+cp raspiarduino-source.img raspiarduino.img
+
+# resize image
+dd if=/dev/zero bs=1M count=1024 >> raspiarduino.img
+parted raspiarduino.img resizepart 2 100%
+
+# mount image
+LOOP=$(losetup --show -fP raspiarduino.img)
+mkdir -p work
+e2fsck -f ${LOOP}p2
+resize2fs ${LOOP}p2
+mount -o rw ${LOOP}p2 work
+mount -o rw ${LOOP}p1 work/boot
+mount --bind /dev work/dev/
+mount --bind /sys work/sys/
+mount --bind /proc work/proc/
+mount --bind /dev/pts work/dev/pts
+
+cat << EOF > work/boot/config.txt
+dtparam=i2c_arm=on,i2c_arm_baudrate=1000000
+dtparam=i2s=on
+auto_initramfs=1
+disable_fw_kms_setup=1
+arm_64bit=1
+disable_overscan=1
+arm_boost=1
+dtoverlay=dwc2
+EOF
+
+# login pi/pi
+cat << EOF > work/boot/userconf.txt
+pi:$6$c70VpvPsVNCG0YR5$l5vWWLsLko9Kj65gcQ8qvMkuOoRkEagI90qi3F/Y7rm8eNYZHW8CY6BOIKwMH7a3YYzZYL90zf304cAHLFaZE0
+EOF
+
+sed -i "s/quiet/quiet modules-load=dwc2/g" work/boot/cmdline.txt
+touch work/boot/ssh
+printf "\nlibcomposite\n" >>  work/etc/modules
+printf "\ndenyinterfaces usb0\n" >>  work/etc/dhcpcd.conf
+
+# basic networking for gadget
+cat << EOF > work/etc/network/interfaces.d/usb0
+allow-hotplug usb0
+iface usb0 inet static
+  address 192.168.11.1
+  netmask 255.255.255.0
+  network 192.168.11.0
+  broadcast 192.168.11.255
+EOF
+
+# dnsmasq for simple DNS
+mkdir -p work/etc/dnsmasq.d/
+cat << EOF > work/etc/dnsmasq.d/usb
+interface=usb0
+dhcp-range=192.168.11.2,192.168.11.6,255.255.255.248,1h
+dhcp-option=3
+leasefile-ro
+EOF
+
+# unmount image
+umount -f work/dev/pts
+umount -f work/proc/
+umount -f work/sys/
+umount -f work/dev/
+umount -f work/boot
+umount -f work
+losetup --detach $LOOP
+
+echo "raspiarduino.img created. Write it to an SD, and boot pi with it. Initially, you can login with 'ssh pi@192.168.11.1' (password 'pi') if you set a static IP on host for that interface. Install dnsmasq with 'apt install -y dnsmasq' to setup DHCP (no IP needed in config on host.)"
